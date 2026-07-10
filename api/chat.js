@@ -2,7 +2,7 @@
 // Gemini AI chatbot – restricted to: Lịch sử · Triết học · Dân tộc · Tôn giáo · MLN131
 
 const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 const SYSTEM_PROMPT = `Bạn là trợ lý AI học thuật của trang web MLN131 – Chủ nghĩa Xã hội Khoa học.
 
@@ -107,6 +107,11 @@ module.exports = async function handler(req, res) {
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
       console.error('Gemini API error:', errText);
+      if (geminiRes.status === 429) {
+        return res.status(429).json({
+          error: '⏳ AI đang bận, vui lòng thử lại sau ít phút! (Hết quota tạm thời)'
+        });
+      }
       return res.status(geminiRes.status).json({ error: 'Lỗi từ Gemini API: ' + errText });
     }
 
