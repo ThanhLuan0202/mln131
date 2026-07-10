@@ -1,0 +1,9 @@
+{
+  "name": "mln131-presentation",
+  "version": "1.0.0",
+  "description": "Quan hệ Dân tộc và Tôn giáo ở Việt Nam – MLN131 Presentation Website",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  }
+}
