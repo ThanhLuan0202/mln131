@@ -1,12 +1,11 @@
 // server.js – Local dev server
 // Chạy: npm run dev  →  mở http://localhost:3000
 
-const http   = require('http');
-const fs     = require('fs');
-const path   = require('path');
+const http = require('http');
+const fs   = require('fs');
+const path = require('path');
 
 const PORT = 3000;
-
 
 // ── Load .env.local ──────────────────────────────────────
 function loadEnv() {
@@ -35,9 +34,9 @@ const MIME = {
   '.ico':  'image/x-icon',
 };
 
-// ── /api/chat handler ─────────────────────────────────────
-const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+// ── Groq API handler ──────────────────────────────────────
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const MODEL = 'llama3-8b-8192';
 
 const SYSTEM_PROMPT = `Bạn là trợ lý AI học thuật của trang web MLN131 – Chủ nghĩa Xã hội Khoa học.
 
@@ -54,29 +53,28 @@ Chỉ trả lời các câu hỏi thuộc các chủ đề sau:
 
 PHONG CÁCH TRẢ LỜI:
 - Trả lời bằng tiếng Việt, rõ ràng, học thuật nhưng dễ hiểu
-- Có thể dùng danh sách, in đậm các từ khóa quan trọng
-- Câu trả lời súc tích, khoảng 150-400 từ, không quá dài
-- Luôn trung thực, chính xác về mặt lịch sử và học thuật
+- Câu trả lời súc tích, khoảng 150-400 từ
+- Luôn trung thực, chính xác về mặt lịch sử
 
 TỪ CHỐI:
-Nếu câu hỏi KHÔNG thuộc các chủ đề trên, hãy lịch sự từ chối và giải thích rằng bạn chỉ hỗ trợ các chủ đề học thuật về lịch sử, triết học, dân tộc và tôn giáo.`;
+Nếu câu hỏi KHÔNG thuộc các chủ đề trên, hãy lịch sự từ chối.
+
+QUAN TRỌNG: Luôn trả lời bằng tiếng Việt.`;
 
 async function handleChat(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
   if (req.method !== 'POST')    { res.writeHead(405); res.end(JSON.stringify({ error: 'Method not allowed' })); return; }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || apiKey === 'your_groq_api_key_here') {
     res.writeHead(500);
-    res.end(JSON.stringify({ error: '⚠️ Chưa cấu hình GEMINI_API_KEY trong file .env.local' }));
+    res.end(JSON.stringify({ error: '⚠️ Chưa cấu hình GROQ_API_KEY trong file .env.local' }));
     return;
   }
 
-  // Read body
   let body = '';
   req.on('data', chunk => body += chunk);
   req.on('end', async () => {
@@ -84,23 +82,22 @@ async function handleChat(req, res) {
       const { messages } = JSON.parse(body);
       if (!messages?.length) { res.writeHead(400); res.end(JSON.stringify({ error: 'Thiếu messages' })); return; }
 
-      const contents = [
-        { role: 'user',  parts: [{ text: SYSTEM_PROMPT }] },
-        { role: 'model', parts: [{ text: 'Xin chào! Tôi là trợ lý AI học thuật MLN131. Tôi sẵn sàng hỗ trợ bạn về lịch sử, triết học, dân tộc và tôn giáo.' }] },
-        ...messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
+      const chatMessages = [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...messages.map(m => ({ role: m.role, content: m.content }))
       ];
 
-      const gemRes = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+      const groqRes = await fetch(GROQ_API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents,
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({ model: MODEL, messages: chatMessages, temperature: 0.7, max_tokens: 1024 })
       });
 
-      const data = await gemRes.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const data = await groqRes.json();
+      const text = data?.choices?.[0]?.message?.content;
 
       if (!text) { res.writeHead(500); res.end(JSON.stringify({ error: 'Không nhận được phản hồi từ AI.' })); return; }
 
@@ -119,11 +116,7 @@ function serveStatic(req, res) {
   if (urlPath === '/') urlPath = '/index.html';
 
   const filePath = path.join(__dirname, urlPath);
-
-  // Prevent directory traversal
-  if (!filePath.startsWith(__dirname)) {
-    res.writeHead(403); res.end('Forbidden'); return;
-  }
+  if (!filePath.startsWith(__dirname)) { res.writeHead(403); res.end('Forbidden'); return; }
 
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not Found: ' + urlPath); return; }
@@ -135,26 +128,18 @@ function serveStatic(req, res) {
 
 // ── HTTP Server ───────────────────────────────────────────
 const server = http.createServer((req, res) => {
-  const url = req.url.split('?')[0];
-
-  if (url === '/api/chat') {
-    handleChat(req, res);
-  } else {
-    serveStatic(req, res);
-  }
+  req.url.startsWith('/api/chat') ? handleChat(req, res) : serveStatic(req, res);
 });
 
 server.listen(PORT, () => {
   console.log('\n  ✅ Server đang chạy tại:');
   console.log(`  🌐 http://localhost:${PORT}\n`);
-  console.log('  💬 Chat AI: /api/chat');
-  console.log('  📄 Static:  /index.html\n');
 
-  const key = process.env.GEMINI_API_KEY;
-  if (!key || key === 'your_gemini_api_key_here') {
-    console.warn('  ⚠️  GEMINI_API_KEY chưa được cấu hình!');
-    console.warn('  👉 Mở file .env.local và điền API key của bạn\n');
+  const key = process.env.GROQ_API_KEY;
+  if (!key || key === 'your_groq_api_key_here') {
+    console.warn('  ⚠️  GROQ_API_KEY chưa được cấu hình!');
+    console.warn('  👉 Mở file .env.local và điền GROQ_API_KEY\n');
   } else {
-    console.log('  🔑 GEMINI_API_KEY: đã cấu hình ✓\n');
+    console.log('  🔑 GROQ_API_KEY: đã cấu hình ✓\n');
   }
 });

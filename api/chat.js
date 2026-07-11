@@ -1,8 +1,8 @@
 // api/chat.js – Vercel Serverless Function
-// Gemini AI chatbot – restricted to: Lịch sử · Triết học · Dân tộc · Tôn giáo · MLN131
+// Groq AI chatbot – restricted to: Lịch sử · Triết học · Dân tộc · Tôn giáo · MLN131
 
-const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const MODEL = 'llama3-8b-8192'; // Free tier: 14,400 req/day · 500k tokens/day
 
 const SYSTEM_PROMPT = `Bạn là trợ lý AI học thuật của trang web MLN131 – Chủ nghĩa Xã hội Khoa học.
 
@@ -19,15 +19,15 @@ Chỉ trả lời các câu hỏi thuộc các chủ đề sau:
 
 PHONG CÁCH TRẢ LỜI:
 - Trả lời bằng tiếng Việt, rõ ràng, học thuật nhưng dễ hiểu
-- Có thể dùng danh sách, in đậm các từ khóa quan trọng
+- Có thể dùng danh sách, in đậm các từ khóa quan trọng bằng **text**
 - Câu trả lời súc tích, khoảng 150-400 từ, không quá dài
 - Luôn trung thực, chính xác về mặt lịch sử và học thuật
 - Nếu không chắc chắn, hãy nói rõ điều đó
 
 TỪ CHỐI:
-Nếu câu hỏi KHÔNG thuộc các chủ đề trên (ví dụ: lập trình, giải trí, nấu ăn, thể thao, tài chính, v.v.), hãy lịch sự từ chối và giải thích rằng bạn chỉ hỗ trợ các chủ đề học thuật về lịch sử, triết học, dân tộc và tôn giáo. Gợi ý người dùng đặt câu hỏi phù hợp hơn.
+Nếu câu hỏi KHÔNG thuộc các chủ đề trên (ví dụ: lập trình, giải trí, nấu ăn, thể thao, tài chính, v.v.), hãy lịch sự từ chối và giải thích rằng bạn chỉ hỗ trợ các chủ đề học thuật về lịch sử, triết học, dân tộc và tôn giáo.
 
-BẮT ĐẦU mỗi cuộc trò chuyện bằng thái độ thân thiện, học thuật.`;
+QUAN TRỌNG: Luôn trả lời bằng tiếng Việt, kể cả khi người dùng hỏi bằng tiếng Anh.`;
 
 module.exports = async function handler(req, res) {
   // ── CORS headers ──────────────────────────────────────────
@@ -44,10 +44,10 @@ module.exports = async function handler(req, res) {
   }
 
   // ── Validate API key ──────────────────────────────────────
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     return res.status(500).json({
-      error: 'API key chưa được cấu hình. Vui lòng thêm GEMINI_API_KEY vào Vercel Environment Variables.'
+      error: '⚠️ Chưa cấu hình GROQ_API_KEY trong Vercel Environment Variables.'
     });
   }
 
@@ -64,59 +64,42 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Thiếu trường messages' });
   }
 
-  // ── Build Gemini contents array ───────────────────────────
-  // Inject system prompt as the first user-model exchange
-  const contents = [
-    {
-      role: 'user',
-      parts: [{ text: SYSTEM_PROMPT }]
-    },
-    {
-      role: 'model',
-      parts: [{ text: 'Xin chào! Tôi là trợ lý AI học thuật MLN131. Tôi có thể giúp bạn tìm hiểu về lịch sử, triết học, quan hệ dân tộc và tôn giáo ở Việt Nam. Bạn có câu hỏi gì không?' }]
-    },
-    // User conversation history
-    ...messages.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }))
+  // ── Build OpenAI-compatible messages ─────────────────────
+  const chatMessages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...messages.map(m => ({ role: m.role, content: m.content }))
   ];
 
-  // ── Call Gemini API ───────────────────────────────────────
+  // ── Call Groq API ─────────────────────────────────────────
   try {
-    const geminiRes = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    const groqRes = await fetch(GROQ_API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
       body: JSON.stringify({
-        contents,
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024
-        },
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
-        ]
+        model: MODEL,
+        messages: chatMessages,
+        temperature: 0.7,
+        max_tokens: 1024,
+        stream: false
       })
     });
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error('Gemini API error:', errText);
-      if (geminiRes.status === 429) {
+    if (!groqRes.ok) {
+      const errText = await groqRes.text();
+      console.error('Groq API error:', errText);
+      if (groqRes.status === 429) {
         return res.status(429).json({
-          error: '⏳ AI đang bận, vui lòng thử lại sau ít phút! (Hết quota tạm thời)'
+          error: '⏳ AI đang bận, vui lòng thử lại sau ít giây!'
         });
       }
-      return res.status(geminiRes.status).json({ error: 'Lỗi từ Gemini API: ' + errText });
+      return res.status(groqRes.status).json({ error: 'Lỗi từ Groq API: ' + errText });
     }
 
-    const data = await geminiRes.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const data = await groqRes.json();
+    const text = data?.choices?.[0]?.message?.content;
 
     if (!text) {
       return res.status(500).json({ error: 'Không nhận được phản hồi từ AI.' });
@@ -128,4 +111,4 @@ module.exports = async function handler(req, res) {
     console.error('Handler error:', err);
     return res.status(500).json({ error: 'Lỗi server: ' + err.message });
   }
-}
+};
