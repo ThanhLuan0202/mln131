@@ -2,7 +2,7 @@
 // Groq AI chatbot – restricted to: Lịch sử · Triết học · Dân tộc · Tôn giáo · MLN131
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama3-8b-8192'; // Free tier: 14,400 req/day · 500k tokens/day
+const MODEL = 'llama-3.1-8b-instant'; // Free tier: 14,400 req/day
 
 const SYSTEM_PROMPT = `Bạn là trợ lý AI học thuật của trang web MLN131 – Chủ nghĩa Xã hội Khoa học.
 
