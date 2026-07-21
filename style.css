@@ -178,6 +178,14 @@ em { font-style: italic; }
   justify-content: center;
   overflow: hidden;
   padding: var(--nav-h) 2rem 4rem;
+  /* Background image with dark overlay */
+  background-image:
+    linear-gradient(rgba(9,9,18,0.62), rgba(9,9,18,0.68)),
+    url('img/1.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 .hero-bg {
@@ -427,6 +435,18 @@ em { font-style: italic; }
 
 .alt-bg {
   background: var(--bg-alt);
+}
+
+/* Intro section – background image 2.jpg */
+#intro {
+  position: relative;
+  background-image:
+    linear-gradient(rgba(9,9,18,0.68), rgba(9,9,18,0.72)),
+    url('img/2.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 .container {
